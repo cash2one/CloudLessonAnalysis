@@ -1,11 +1,19 @@
 #coding:utf-8
-__author__ = 'lyn  <tonylu716@gmail.com>'
+"""
+@file:      LessonDataSpider.py
+@author:    lyn
+@contact:   tonylu716@gmail.com
+@python:    3.3
+@editor:    PyCharm
+@create:    2016-07-08 12:28
+@description:
+            爬取网易云课堂的数据
+"""
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
 import time,pymysql,random
 from threading import Thread
 
