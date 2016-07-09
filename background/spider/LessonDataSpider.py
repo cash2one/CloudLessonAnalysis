@@ -6,7 +6,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.select import Select
 import time,pymysql,random
 from threading import Thread
 
@@ -61,3 +60,11 @@ class LessonDataSpider(object):
 
     def catch_reply(self):
         pass
+
+
+    def save_to_db(self):
+        pass
+
+
+    def tear_down(self):
+        self.driver.close()
