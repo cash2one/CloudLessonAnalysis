@@ -13,9 +13,7 @@
 from background.spider.LessonDataSpider import LessonDataSpider
 import time
 
-s = LessonDataSpider(need_web=True)
-
-#s.login(using_qq=True)
+s = LessonDataSpider(need_web=True,need_db=False,qq_login=True)
 
 time.sleep(2)
 
@@ -29,13 +27,12 @@ for course in course_list:
 
 
 '''
-#测试存
+#测试写入课程信息
 s.save_course_info_to_db()
 '''
 
 '''
-#测试读
-
+#测试读取课程信息
 course_urls = s.get_course_info_by_db()
 print(course_urls)
 '''
@@ -54,7 +51,11 @@ for course_url in course_urls[-20:]:
 '''
 
 '''
+测试写入学期信息
 s.save_term_info_to_db()
 '''
 
+'''
+测试更新课程信息
 s.update_course_info()
+'''

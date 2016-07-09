@@ -18,7 +18,9 @@ import time,pymysql,random
 from threading import Thread
 
 class LessonDataSpider(object):
-    def __init__(self,is_visual=True,need_web=True,need_db=True):
+    def __init__(self,is_visual=True,need_web=True,need_db=True,qq_login=False):
+        if qq_login:
+            need_web = True
         if need_web:
             if is_visual:
                 self.driver = webdriver.Chrome()
@@ -31,6 +33,8 @@ class LessonDataSpider(object):
                 db='cloudlesson',   charset='utf8'
             )
             self.cur = self.conn.cursor()
+        if qq_login:
+            self.login(using_qq=True)
 
 
     def login(self,email=None,passwd=None,using_qq=False):
