@@ -276,11 +276,14 @@ class LessonDataSpider(object):
         term_id = self.cur.fetchall()[0][0]
         if data['username']==None and data['uid']==None:
             #如果匿名发表，直接存post
-            self.cur.execute(
-                'insert into post(post_id,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
-                'values(%s,%s,%s,%s,%s,%s,%s,%s)',
-                (data['post_id'],term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
-            )
+            try:
+                self.cur.execute(
+                    'insert into post(post_id,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
+                    'values(%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (data['post_id'],term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
+                )
+            except:
+                print('this post has been saved')
         else:
             #实名发表
             try:
@@ -292,17 +295,20 @@ class LessonDataSpider(object):
                 )
                 self.conn.commit()
             except:
-                print('this user have been saved previously')
+                print('this user has been saved previously')
             #读取用户id
             self.cur.execute(
                 'select id from user where uid=' + data['uid']
             )
             saved_user_id = self.cur.fetchall()[0][0]
-            self.cur.execute(
-                'insert into post(post_id,user,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
-                'values(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                (data['post_id'],saved_user_id,term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
-            )
+            try:
+                self.cur.execute(
+                    'insert into post(post_id,user,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
+                    'values(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (data['post_id'],saved_user_id,term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
+                )
+            except:
+                print('this post has been saved')
 
     def get_post_info_by_db(self):
         pass
