@@ -14,7 +14,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time,pymysql,random
+import time,pymysql,random,re
 from threading import Thread
 
 class LessonDataSpider(object):
@@ -35,7 +35,6 @@ class LessonDataSpider(object):
             self.cur = self.conn.cursor()
         if qq_login:
             self.login(using_qq=True)
-
 
     def login(self,email=None,passwd=None,using_qq=False):
         #使用qq登陆，可避开验证码认证
@@ -82,7 +81,6 @@ class LessonDataSpider(object):
                     browser.refresh()
                     browser.switch_to_frame('ptlogin_iframe')
 
-
     def get_all_cs_courses_by_crawling(self):
         data_list = []
         browser = self.driver
@@ -96,7 +94,6 @@ class LessonDataSpider(object):
                 data_list.append((course_url,course_id))
         return data_list
 
-
     def save_course_info_to_db(self):
         for course_tuple in self.get_all_cs_courses_by_crawling():
             self.cur.execute(
@@ -106,13 +103,14 @@ class LessonDataSpider(object):
             )
             self.conn.commit()
 
-
     def update_course_info(self):
         for course in self.get_course_info_by_db():
             url = course[0]
             id = course[1]
             self.driver.get(url)
-            name = self.driver.find_element_by_xpath('//*[@id="g-body"]/div/div[2]/div[1]/div/div[1]/h2').text
+            name = self.driver.find_element_by_xpath(
+                '//*[@id="g-body"]/div/div[2]/div[1]/div/div[1]/h2'
+            ).text
             print(name)
             self.cur.execute(
                 'update course set name=%s'
@@ -121,13 +119,11 @@ class LessonDataSpider(object):
             )
             self.conn.commit()
 
-
     def get_course_info_by_db(self):
         self.cur.execute(
             'select url,id from course'
         )
         return self.cur.fetchall()
-
 
     def get_term_info_by_crawling(self,course_url):
         browser = self.driver
@@ -186,7 +182,6 @@ class LessonDataSpider(object):
         #print('\n')
         return term_data_list
 
-
     def save_term_info_to_db(self):
         course_tuples = self.get_course_info_by_db()
         for course_tuple in course_tuples:
@@ -202,10 +197,115 @@ class LessonDataSpider(object):
                 )
                 self.conn.commit()
 
+    def get_term_info_by_db(self):
+        self.cur.execute(
+            'select term_id,id from term'
+        )
+        return self.cur.fetchall()
 
-    def catch_reply(self,course_id):
+    def get_term_post_pages_num(self,term_url):
+        browser = self.driver
+        first_page_url = term_url + '#/learn/forumindex'
+        browser.get(first_page_url)
+        num = browser.find_element_by_xpath(
+            '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[2]'
+        ).find_elements_by_tag_name('a')[-2].text
+        return int(num)
+
+    def get_post_info_by_crawling(self,term_url):
+        page_num = self.get_term_post_pages_num(term_url)
+        browser = self.driver
+        for i in range(1,page_num+1):
+            print('---------------')
+            print('page:',i)
+            #t=2表示默认按回复数排序
+            page_url = term_url + '#/learn/forumindex?t=2?p=' + str(i)
+            browser.get(page_url)
+            #定位帖子列表位置
+            post_list = []
+            while(not post_list):
+                post_list = browser.find_element_by_xpath(
+                    '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[1]'
+                ).find_elements_by_tag_name('li')
+                print('waiting for loading,search again...')
+                time.sleep(1)
+            for post in post_list:
+                data_dict = {}
+                data_dict['term_url'] = term_url
+                data_dict['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
+                data_dict['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
+                data_dict['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
+                cnt_area = post.find_element_by_class_name('cnt')
+                data_dict['teacher_joined'] = False
+                if cnt_area.find_elements_by_class_name('u-forumtag'):
+                    data_dict['teacher_joined'] = True
+                data_dict['title'] = cnt_area.find_element_by_tag_name('a').text
+                data_dict['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+                if post.find_element_by_class_name('anonyInfo').is_displayed():
+                    #如果匿名发表
+                    data_dict['username'] = None
+                    data_dict['uid'] = None
+                    data_dict['is_teacher'] = None
+                else:
+                    author_area = post.find_element_by_class_name('userInfo')
+                    data_dict['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
+                    data_dict['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+                    data_dict['is_teacher'] = False
+                    if author_area.find_elements_by_class_name('lector'):
+                        data_dict['is_teacher'] = True
+                time_text = post.find_element_by_xpath(
+                    '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[1]/div[1]/li/span'
+                ).text
+                submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
+                submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
+                data_dict['submit_date'] = '-'.join(submit_time_list)
+                data_dict['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
+                try:
+                    print(data_dict)
+                except:
+                    print('unicodeencodeerror')
+                self.save_post_info_to_db(data_dict)
+
+    def update_post_content(self):
         pass
 
+    def save_post_info_to_db(self,data):
+        self.cur.execute(
+                'select id from term where term_id=' + data['term_url'].split('=')[-1]
+        )
+        term_id = self.cur.fetchall()[0][0]
+        if data['username']==None and data['uid']==None:
+            #如果匿名发表，直接存post
+            self.cur.execute(
+                'insert into post(post_id,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
+                'values(%s,%s,%s,%s,%s,%s,%s,%s)',
+                (data['post_id'],term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
+            )
+        else:
+            #实名发表
+            try:
+                #先存用户
+                self.cur.execute(
+                    'insert into user(uid,username,is_teacher)'
+                    'values(%s,%s,%s)',
+                    (data['uid'],data['username'],data['is_teacher'])
+                )
+                self.conn.commit()
+            except:
+                print('this user have been saved previously')
+            #读取用户id
+            self.cur.execute(
+                'select id from user where uid=' + data['uid']
+            )
+            saved_user_id = self.cur.fetchall()[0][0]
+            self.cur.execute(
+                'insert into post(post_id,user,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
+                'values(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (data['post_id'],saved_user_id,term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
+            )
+
+    def get_post_info_by_db(self):
+        pass
 
     def tear_down(self):
         self.driver.close()
