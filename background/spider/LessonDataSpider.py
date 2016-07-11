@@ -18,7 +18,10 @@ import time,pymysql,random,re
 from threading import Thread
 
 class LessonDataSpider(object):
-    def __init__(self,is_visual=True,need_web=True,need_db=True,qq_login=False):
+    def __init__(
+            self,is_visual=True,    need_web=True,
+            need_db=True,           qq_login=False
+    ):
         if qq_login:
             need_web = True
         if need_web:
@@ -35,6 +38,7 @@ class LessonDataSpider(object):
             self.cur = self.conn.cursor()
         if qq_login:
             self.login(using_qq=True)
+
 
     def login(self,email=None,passwd=None,using_qq=False):
         #使用qq登陆，可避开验证码认证
@@ -82,6 +86,7 @@ class LessonDataSpider(object):
                     browser.switch_to_frame('ptlogin_iframe')
         time.sleep(2)
 
+
     def get_all_cs_courses_by_crawling(self):
         data_list = []
         browser = self.driver
@@ -95,6 +100,7 @@ class LessonDataSpider(object):
                 data_list.append((course_url,course_id))
         return data_list
 
+
     def save_course_info_to_db(self):
         for course_tuple in self.get_all_cs_courses_by_crawling():
             self.cur.execute(
@@ -103,6 +109,7 @@ class LessonDataSpider(object):
                 course_tuple
             )
             self.conn.commit()
+
 
     def update_course_info(self):
         for course in self.get_course_info_by_db():
@@ -120,11 +127,13 @@ class LessonDataSpider(object):
             )
             self.conn.commit()
 
+
     def get_course_info_by_db(self):
         self.cur.execute(
             'select url,id from course'
         )
         return self.cur.fetchall()
+
 
     def get_term_info_by_crawling(self,course_url):
         browser = self.driver
@@ -183,6 +192,7 @@ class LessonDataSpider(object):
         #print('\n')
         return term_data_list
 
+
     def save_term_info_to_db(self):
         course_tuples = self.get_course_info_by_db()
         for course_tuple in course_tuples:
@@ -198,11 +208,13 @@ class LessonDataSpider(object):
                 )
                 self.conn.commit()
 
+
     def get_term_info_by_db(self):
         self.cur.execute(
             'select term_id,course from term'
         )
         return self.cur.fetchall()
+
 
     def get_term_urls(self):
         urls = []
@@ -218,7 +230,16 @@ class LessonDataSpider(object):
             urls.append(term_url)
         return urls
 
-    def get_term_post_pages_num(self,term_url):
+
+    def get_term_post_pages_num(self,term_url,from_db=False):
+        term_id = term_url.split('=')[-1]
+        if from_db:
+            self.cur.execute(
+                'select page_num from term where term_id = %s',(term_id)
+            )
+            page_num = int(self.cur.fetchall()[0][0])
+            print(page_num)
+            return page_num
         browser = self.driver
         first_page_url = term_url + '#/learn/forumindex'
         while(1):
@@ -226,9 +247,9 @@ class LessonDataSpider(object):
             if 'forumindex' in browser.current_url:
                 break
             else:
-                print('网页被恶意指向，重复访问',first_page_url)
+                print('网页被重定向')
                 try:
-                    print('存在learn页按钮，则模拟点击')
+                    print('存在learn页按钮，模拟点击')
                     browser.find_element_by_xpath('//*[@id="j-startLearn"]').click()
                     time.sleep(2)
                 except:
@@ -251,17 +272,68 @@ class LessonDataSpider(object):
         num = last_page_a.text
         return int(num)
 
+
     def term_is_initialized(self,term_id):
         self.cur.execute(
             'SELECT first_crawl_ok FROM term WHERE term_id = %s',term_id
         )
         return self.cur.fetchall()[0][0]
 
-    def crawl_page_posts_data(self,term_url,page_index,for_update=False):
+
+    def get_post_data(
+        self,   post,   term_url,   for_update = False,
+    ):
+        data_dict = {}
+        data_dict['term_url'] = term_url
+        data_dict['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
+        data_dict['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
+        data_dict['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
+        cnt_area = post.find_element_by_class_name('cnt')
+        data_dict['teacher_joined'] = False
+        if cnt_area.find_elements_by_class_name('u-forumtag'):
+            data_dict['teacher_joined'] = True
+        data_dict['title'] = cnt_area.find_element_by_tag_name('a').text
+        data_dict['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+        if post.find_element_by_class_name('anonyInfo').is_displayed():
+            #如果匿名发表
+            data_dict['username'] = None
+            data_dict['uid'] = None
+            data_dict['is_teacher'] = None
+        else:
+            author_area = post.find_element_by_class_name('userInfo')
+            data_dict['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
+            data_dict['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+            data_dict['is_teacher'] = False
+            if author_area.find_elements_by_class_name('lector'):
+                data_dict['is_teacher'] = True
+        time_text = post.find_element_by_tag_name('span').text
+        #print(time_text)
+        submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
+        submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
+        data_dict['submit_date'] = '-'.join(submit_time_list)
+        data_dict['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
+        try:
+            print(data_dict['submit_date'],data_dict['term_url'].split('=')[-1],data_dict['title'])
+        except:
+            print('unicodeEncodeError')
+        if not for_update:
+            self.save_post_info_to_db(data_dict)
+        else:
+            self.update_post_base_info(data_dict)
+        return data_dict
+
+
+    def crawl_page_posts_data(
+        self,   term_url,   page_index,   for_update=False,   crawl_delta=True
+    ):
         browser = self.driver
         print('---------------')
-        #t=2表示默认按回复数排序
-        page_url = term_url + '#/learn/forumindex?t=2?p=' + str(page_index)
+        #t=2表示默认按回复数排序,t=0是按最新发布排序
+        if crawl_delta:
+            order = '0'
+        else:
+            order = '2'
+        page_url = term_url + '#/learn/forumindex?t='+ order +'?p=' + str(page_index)
         browser.get(page_url)
         #定位帖子列表位置
         post_list = []
@@ -272,59 +344,47 @@ class LessonDataSpider(object):
             print('waiting for loading,search again...')
             time.sleep(1)
         for post in post_list:
-            data_dict = {}
-            data_dict['term_url'] = term_url
-            data_dict['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
-            data_dict['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
-            data_dict['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
-            cnt_area = post.find_element_by_class_name('cnt')
-            data_dict['teacher_joined'] = False
-            if cnt_area.find_elements_by_class_name('u-forumtag'):
-                data_dict['teacher_joined'] = True
-            data_dict['title'] = cnt_area.find_element_by_tag_name('a').text
-            data_dict['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
-            if post.find_element_by_class_name('anonyInfo').is_displayed():
-                #如果匿名发表
-                data_dict['username'] = None
-                data_dict['uid'] = None
-                data_dict['is_teacher'] = None
-            else:
-                author_area = post.find_element_by_class_name('userInfo')
-                data_dict['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
-                data_dict['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
-                data_dict['is_teacher'] = False
-                if author_area.find_elements_by_class_name('lector'):
-                    data_dict['is_teacher'] = True
-            time_text = post.find_element_by_tag_name('span').text
-            #print(time_text)
-            submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
-            submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
-            data_dict['submit_date'] = '-'.join(submit_time_list)
-            data_dict['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
-            try:
-                print(data_dict['post_id'],data_dict['title'])
-            except:
-                print('unicodeEncodeError')
-            if not for_update:
-                self.save_post_info_to_db(data_dict)
-            else:
-                self.update_post_date(data_dict)
+            self.get_post_data(post,term_url,for_update)
+
 
     def get_post_info_by_crawling(self,term_url,for_update=False):
         term_id = term_url.split('=')[-1]
-        if (self.term_is_initialized(term_id)):
-            pass
-        #按发布或更新时间顺序，增量爬
-        page_num = self.get_term_post_pages_num(term_url)
-        browser = self.driver
-        for i in range(1,page_num+1):
-            print('page:',i)
-            self.crawl_page_posts_data(term_url=term_url,page_index=i,for_update=for_update)
-        if page_num:
-            self.cur.execute('UPDATE term SET first_crawl_ok = 1 WHERE term_id = %s',term_id)
+        current_page_num = self.get_term_post_pages_num(term_url,from_db=False)
+        saved_page_num = self.get_term_post_pages_num(term_url,from_db=True)
+        print((current_page_num,saved_page_num))
+        if current_page_num==0:
+            return
+        if self.term_is_initialized(term_id) :
+            print('current_page_num:{},saved_page_num:{}'.format(current_page_num,saved_page_num))
+            if current_page_num > saved_page_num or current_page_num < saved_page_num:
+                self.cur.execute(
+                    'update term set page_num = %s where term_id= %s',(current_page_num,term_id)
+                )
+                self.conn.commit()
+            #按发布或更新时间顺序，爬增量
+            if current_page_num >= saved_page_num:
+                for i in range(1,current_page_num-saved_page_num+2):
+                    print('page:{}/{}'.format(i,current_page_num-saved_page_num+1))
+                    self.crawl_page_posts_data(
+                        term_url=term_url,      page_index=i,
+                        for_update=for_update,  crawl_delta=True
+                    )
+            else:
+                print('current < saved, kidding me???')
+        else:
+            #第一次初始化数据时全部页都爬取保存
+            for i in range(1,current_page_num+1):
+                print('page:{}/{}'.format(i,current_page_num))
+                self.crawl_page_posts_data(
+                    term_url=term_url,      page_index=i,
+                    for_update=for_update,  crawl_delta=False
+                )
+            if current_page_num:
+                self.cur.execute("UPDATE term SET first_crawl_ok = 1 WHERE term_id = %s",term_id)
 
     def update_post_content(self):
         pass
+
 
     def update_post_base_info(self,data):
         #参数自己填
@@ -338,8 +398,9 @@ class LessonDataSpider(object):
             )
             self.conn.commit()
         else:
-            print('update_post_date() Error: This post had not been saved,I will execute save operation first.')
-            self.save_post_info_to_db(data)
+            print('update_post_date() Error: This post had not been saved,you should execute save operation first.')
+            #self.save_post_info_to_db(data)
+
 
     def save_post_info_to_db(self,data):
         self.cur.execute(
@@ -383,11 +444,12 @@ class LessonDataSpider(object):
                 )
                 self.conn.commit()
             except:
-                self.update_post_base_info(data)
                 print('this post has been saved previously')
+
 
     def get_post_info_by_db(self):
         pass
+
 
     def tear_down(self):
         self.driver.close()

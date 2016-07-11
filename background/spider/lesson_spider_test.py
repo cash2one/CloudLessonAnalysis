@@ -16,7 +16,7 @@ import time
 s = LessonDataSpider(need_web=True,need_db=True ,qq_login=True)
 
 
-for term_url in s.get_term_urls():
+for term_url in s.get_term_urls()[18:]:
     print(term_url)
     s.get_post_info_by_crawling(
         term_url=term_url,
