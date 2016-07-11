@@ -13,11 +13,14 @@
 from background.spider.LessonDataSpider import LessonDataSpider
 import time
 
-s = LessonDataSpider(need_web=True,need_db=True,qq_login=True)
+s = LessonDataSpider(need_web=True,need_db=True ,qq_login=True)
 
 time.sleep(2)
 
-s.get_post_info_by_crawling(term_url='http://mooc.study.163.com/learn/ZJU-1000004001?tid=1000005000')
+s.get_post_info_by_crawling(
+    term_url='http://mooc.study.163.com/learn/ZJU-1000004001?tid=1000005000',
+    for_update=True
+)
 
 '''
 #测试爬取课程信息

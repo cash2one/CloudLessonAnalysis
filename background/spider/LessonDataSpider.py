@@ -212,7 +212,7 @@ class LessonDataSpider(object):
         ).find_elements_by_tag_name('a')[-2].text
         return int(num)
 
-    def get_post_info_by_crawling(self,term_url):
+    def get_post_info_by_crawling(self,term_url,for_update=False):
         page_num = self.get_term_post_pages_num(term_url)
         browser = self.driver
         for i in range(1,page_num+1):
@@ -253,9 +253,8 @@ class LessonDataSpider(object):
                     data_dict['is_teacher'] = False
                     if author_area.find_elements_by_class_name('lector'):
                         data_dict['is_teacher'] = True
-                time_text = post.find_element_by_xpath(
-                    '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[1]/div[1]/li/span'
-                ).text
+                time_text = post.find_element_by_tag_name('span').text
+                print(time_text)
                 submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
                 submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
                 data_dict['submit_date'] = '-'.join(submit_time_list)
@@ -264,14 +263,25 @@ class LessonDataSpider(object):
                     print(data_dict)
                 except:
                     print('unicodeencodeerror')
-                self.save_post_info_to_db(data_dict)
+                if not for_update:
+                    self.save_post_info_to_db(data_dict)
+                else:
+                    self.update_post_date(data_dict)
 
     def update_post_content(self):
         pass
 
+    def update_post_date(self,data):
+        self.cur.execute(
+            'update post set submit_date = %s,latest_reply_date = %s'
+            'where post_id = %s',
+            (data['submit_date'],data['latest_reply_date'],data['post_id'])
+        )
+        self.conn.commit()
+
     def save_post_info_to_db(self,data):
         self.cur.execute(
-                'select id from term where term_id=' + data['term_url'].split('=')[-1]
+            'select id from term where term_id=' + data['term_url'].split('=')[-1]
         )
         term_id = self.cur.fetchall()[0][0]
         if data['username']==None and data['uid']==None:
