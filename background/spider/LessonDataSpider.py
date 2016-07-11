@@ -234,7 +234,9 @@ class LessonDataSpider(object):
                 except:
                     print('此课程该学期已停')
                     return 0
-        pager_div = browser.find_element_by_xpath('//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[2]')
+        pager_div = browser.find_element_by_xpath(
+            '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[2]'
+        )
         if not pager_div.is_displayed():
             return 1
         a_list = browser.find_element_by_xpath(
@@ -255,6 +257,59 @@ class LessonDataSpider(object):
         )
         return self.cur.fetchall()[0][0]
 
+    def crawl_page_posts_data(self,term_url,page_index,for_update=False):
+        browser = self.driver
+        print('---------------')
+        #t=2表示默认按回复数排序
+        page_url = term_url + '#/learn/forumindex?t=2?p=' + str(page_index)
+        browser.get(page_url)
+        #定位帖子列表位置
+        post_list = []
+        while(not post_list):
+            post_list = browser.find_element_by_xpath(
+                '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[1]'
+            ).find_elements_by_tag_name('li')
+            print('waiting for loading,search again...')
+            time.sleep(1)
+        for post in post_list:
+            data_dict = {}
+            data_dict['term_url'] = term_url
+            data_dict['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
+            data_dict['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
+            data_dict['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
+            cnt_area = post.find_element_by_class_name('cnt')
+            data_dict['teacher_joined'] = False
+            if cnt_area.find_elements_by_class_name('u-forumtag'):
+                data_dict['teacher_joined'] = True
+            data_dict['title'] = cnt_area.find_element_by_tag_name('a').text
+            data_dict['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+            if post.find_element_by_class_name('anonyInfo').is_displayed():
+                #如果匿名发表
+                data_dict['username'] = None
+                data_dict['uid'] = None
+                data_dict['is_teacher'] = None
+            else:
+                author_area = post.find_element_by_class_name('userInfo')
+                data_dict['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
+                data_dict['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+                data_dict['is_teacher'] = False
+                if author_area.find_elements_by_class_name('lector'):
+                    data_dict['is_teacher'] = True
+            time_text = post.find_element_by_tag_name('span').text
+            #print(time_text)
+            submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
+            submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
+            data_dict['submit_date'] = '-'.join(submit_time_list)
+            data_dict['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
+            try:
+                print(data_dict['post_id'],data_dict['title'])
+            except:
+                print('unicodeEncodeError')
+            if not for_update:
+                self.save_post_info_to_db(data_dict)
+            else:
+                self.update_post_date(data_dict)
+
     def get_post_info_by_crawling(self,term_url,for_update=False):
         term_id = term_url.split('=')[-1]
         if (self.term_is_initialized(term_id)):
@@ -263,75 +318,23 @@ class LessonDataSpider(object):
         page_num = self.get_term_post_pages_num(term_url)
         browser = self.driver
         for i in range(1,page_num+1):
-            print('---------------')
             print('page:',i)
-            #t=2表示默认按回复数排序
-            page_url = term_url + '#/learn/forumindex?t=2?p=' + str(i)
-            browser.get(page_url)
-            #定位帖子列表位置
-            post_list = []
-            while(not post_list):
-                post_list = browser.find_element_by_xpath(
-                    '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[1]'
-                ).find_elements_by_tag_name('li')
-                print('waiting for loading,search again...')
-                time.sleep(1)
-            for post in post_list:
-                data_dict = {}
-                data_dict['term_url'] = term_url
-                data_dict['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
-                data_dict['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
-                data_dict['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
-                cnt_area = post.find_element_by_class_name('cnt')
-                data_dict['teacher_joined'] = False
-                if cnt_area.find_elements_by_class_name('u-forumtag'):
-                    data_dict['teacher_joined'] = True
-                data_dict['title'] = cnt_area.find_element_by_tag_name('a').text
-                data_dict['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
-                if post.find_element_by_class_name('anonyInfo').is_displayed():
-                    #如果匿名发表
-                    data_dict['username'] = None
-                    data_dict['uid'] = None
-                    data_dict['is_teacher'] = None
-                else:
-                    author_area = post.find_element_by_class_name('userInfo')
-                    data_dict['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
-                    data_dict['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
-                    data_dict['is_teacher'] = False
-                    if author_area.find_elements_by_class_name('lector'):
-                        data_dict['is_teacher'] = True
-                time_text = post.find_element_by_tag_name('span').text
-                #print(time_text)
-                submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
-                submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
-                data_dict['submit_date'] = '-'.join(submit_time_list)
-                data_dict['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
-                try:
-                    print(data_dict['post_id'],data_dict['title'])
-                except:
-                    print('unicodeEncodeError')
-                if not for_update:
-                    self.save_post_info_to_db(data_dict)
-                else:
-                    self.update_post_date(data_dict)
+            self.crawl_page_posts_data(term_url=term_url,page_index=i,for_update=for_update)
         if page_num:
-            self.cur.execute(
-                'UPDATE term SET first_crawl_ok = 1 WHERE term_id = %s',term_id
-            )
-
+            self.cur.execute('UPDATE term SET first_crawl_ok = 1 WHERE term_id = %s',term_id)
 
     def update_post_content(self):
         pass
 
-    def update_post_date(self,data):
+    def update_post_base_info(self,data):
+        #参数自己填
         self.cur.execute(
             'SELECT id FROM post WHERE post_id = %s',data['post_id']
         )
         if self.cur.fetchall():
             self.cur.execute(
-                'update post set submit_date = %s,latest_reply_date = %s'
-                'where post_id = %s',
-                (data['submit_date'],data['latest_reply_date'],data['post_id'])
+                'update post set submit_date = %s,latest_reply_date = %s,view_cot = %s where post_id = %s',
+                (data['submit_date'],data['latest_reply_date'],data['view_cot'],data['post_id'])
             )
             self.conn.commit()
         else:
@@ -347,12 +350,13 @@ class LessonDataSpider(object):
             #如果匿名发表，直接存post
             try:
                 self.cur.execute(
-                    'insert into post(post_id,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
-                    'values(%s,%s,%s,%s,%s,%s,%s,%s)',
-                    (data['post_id'],term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
+                    'insert into post(post_id,term,reply_cot,votinse_cot,view_cot,submit_date,latest_reply_date,title,teacher_joined)'
+                    'values(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (data['post_id'],term_id,data['reply_cot'],data['vote_cot'],data['view_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
                 )
                 self.conn.commit()
             except:
+                self.update_post_base_info(data)
                 print('this post has been saved previously')
         else:
             #实名发表
@@ -368,17 +372,18 @@ class LessonDataSpider(object):
                 print('this user has been saved previously')
             #读取用户id
             self.cur.execute(
-                'select id from user where uid=' + data['uid']
+                'select id from user where uid = ' + data['uid']
             )
             saved_user_id = self.cur.fetchall()[0][0]
             try:
                 self.cur.execute(
-                    'insert into post(post_id,user,term,reply_cot,vote_cot,submit_date,latest_reply_date,title,teacher_joined)'
-                    'values(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                    (data['post_id'],saved_user_id,term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
+                    'insert into post(post_id,user,term,reply_cot,vote_cot,view_cot,submit_date,latest_reply_date,title,teacher_joined)'
+                    'values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (data['post_id'],saved_user_id,term_id,data['reply_cot'],data['vote_cot'],data['view_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
                 )
                 self.conn.commit()
             except:
+                self.update_post_base_info(data)
                 print('this post has been saved previously')
 
     def get_post_info_by_db(self):
