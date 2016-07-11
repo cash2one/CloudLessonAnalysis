@@ -15,12 +15,15 @@ import time
 
 s = LessonDataSpider(need_web=True,need_db=True ,qq_login=True)
 
-time.sleep(2)
 
-s.get_post_info_by_crawling(
-    term_url='http://mooc.study.163.com/learn/ZJU-1000004001?tid=1000005000',
-    for_update=True
-)
+for term_url in s.get_term_urls()[45:]:
+    print(term_url)
+    s.get_post_info_by_crawling(
+        term_url=term_url,
+        for_update=False
+    )
+    print('---------')
+
 
 '''
 #测试爬取课程信息

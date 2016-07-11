@@ -80,6 +80,7 @@ class LessonDataSpider(object):
                     print('请登录一个qq,页面刷新...')
                     browser.refresh()
                     browser.switch_to_frame('ptlogin_iframe')
+        time.sleep(2)
 
     def get_all_cs_courses_by_crawling(self):
         data_list = []
@@ -199,20 +200,66 @@ class LessonDataSpider(object):
 
     def get_term_info_by_db(self):
         self.cur.execute(
-            'select term_id,id from term'
+            'select term_id,course from term'
         )
         return self.cur.fetchall()
+
+    def get_term_urls(self):
+        urls = []
+        for term_info_tuple in self.get_term_info_by_db():
+            course_id = str(term_info_tuple[1])
+            term_id = term_info_tuple[0]
+            self.cur.execute(
+                'Select url From course WHERE id = ' + course_id
+            )
+            course_url = self.cur.fetchall()[0][0]
+            course_url = course_url.replace('/course','/learn')
+            term_url = course_url + '?tid=' + term_id
+            urls.append(term_url)
+        return urls
 
     def get_term_post_pages_num(self,term_url):
         browser = self.driver
         first_page_url = term_url + '#/learn/forumindex'
-        browser.get(first_page_url)
-        num = browser.find_element_by_xpath(
+        while(1):
+            browser.get(first_page_url)
+            if 'forumindex' in browser.current_url:
+                break
+            else:
+                print('网页被恶意指向，重复访问',first_page_url)
+                try:
+                    print('存在learn页按钮，则模拟点击')
+                    browser.find_element_by_xpath('//*[@id="j-startLearn"]').click()
+                    time.sleep(2)
+                except:
+                    print('此课程该学期已停')
+                    return 0
+        pager_div = browser.find_element_by_xpath('//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[2]')
+        if not pager_div.is_displayed():
+            return 1
+        a_list = browser.find_element_by_xpath(
             '//*[@id="courseLearn-inner-box"]/div/div[7]/div/div[2]/div/div[1]/div[2]'
-        ).find_elements_by_tag_name('a')[-2].text
+        ).find_elements_by_tag_name('a')
+        last_page_a = None
+        for a in a_list:
+            if a.is_displayed() and a.text!='下一页':
+                last_page_a = a
+            else:
+                break
+        num = last_page_a.text
         return int(num)
 
+    def term_is_initialized(self,term_id):
+        self.cur.execute(
+            'SELECT first_crawl_ok FROM term WHERE term_id = %s',term_id
+        )
+        return self.cur.fetchall()[0][0]
+
     def get_post_info_by_crawling(self,term_url,for_update=False):
+        term_id = term_url.split('=')[-1]
+        if (self.term_is_initialized(term_id)):
+            pass
+        #按发布或更新时间顺序，增量爬
         page_num = self.get_term_post_pages_num(term_url)
         browser = self.driver
         for i in range(1,page_num+1):
@@ -254,30 +301,42 @@ class LessonDataSpider(object):
                     if author_area.find_elements_by_class_name('lector'):
                         data_dict['is_teacher'] = True
                 time_text = post.find_element_by_tag_name('span').text
-                print(time_text)
+                #print(time_text)
                 submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
                 submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
                 data_dict['submit_date'] = '-'.join(submit_time_list)
                 data_dict['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
                 try:
-                    print(data_dict)
+                    print(data_dict['post_id'],data_dict['title'])
                 except:
-                    print('unicodeencodeerror')
+                    print('unicodeEncodeError')
                 if not for_update:
                     self.save_post_info_to_db(data_dict)
                 else:
                     self.update_post_date(data_dict)
+        if page_num:
+            self.cur.execute(
+                'UPDATE term SET first_crawl_ok = 1 WHERE term_id = %s',term_id
+            )
+
 
     def update_post_content(self):
         pass
 
     def update_post_date(self,data):
         self.cur.execute(
-            'update post set submit_date = %s,latest_reply_date = %s'
-            'where post_id = %s',
-            (data['submit_date'],data['latest_reply_date'],data['post_id'])
+            'SELECT id FROM post WHERE post_id = %s',data['post_id']
         )
-        self.conn.commit()
+        if self.cur.fetchall():
+            self.cur.execute(
+                'update post set submit_date = %s,latest_reply_date = %s'
+                'where post_id = %s',
+                (data['submit_date'],data['latest_reply_date'],data['post_id'])
+            )
+            self.conn.commit()
+        else:
+            print('update_post_date() Error: This post had not been saved,I will execute save operation first.')
+            self.save_post_info_to_db(data)
 
     def save_post_info_to_db(self,data):
         self.cur.execute(
@@ -292,8 +351,9 @@ class LessonDataSpider(object):
                     'values(%s,%s,%s,%s,%s,%s,%s,%s)',
                     (data['post_id'],term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
                 )
+                self.conn.commit()
             except:
-                print('this post has been saved')
+                print('this post has been saved previously')
         else:
             #实名发表
             try:
@@ -317,8 +377,9 @@ class LessonDataSpider(object):
                     'values(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                     (data['post_id'],saved_user_id,term_id,data['reply_cot'],data['vote_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
                 )
+                self.conn.commit()
             except:
-                print('this post has been saved')
+                print('this post has been saved previously')
 
     def get_post_info_by_db(self):
         pass
