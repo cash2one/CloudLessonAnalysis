@@ -216,17 +216,30 @@ class LessonDataSpider(object):
         return self.cur.fetchall()
 
 
+    def get_term_url(self,post_id=None,term_id=None,course_id=None):
+        if term_id==None and post_id==None:
+            raise Exception('I cannot locate the term without term_id or post_id.')
+        if term_id==None and post_id!=None:
+            self.cur.execute(
+                'SELECT term_id FROM term WHERE id = (SELECT term FROM post WHERE post_id = {})'.format(post_id)
+            )
+            term_id = self.cur.fetchall()[0][0]
+        sql = 'SELECT url From course WHERE id = '
+        if course_id:
+            sql += course_id
+        else:
+            sql += '(SELECT course FROM term WHERE term_id = {})'.format(term_id)
+        self.cur.execute(sql)
+        course_url = self.cur.fetchall()[0][0].replace('/course','/learn')
+        term_url = course_url + '?tid=' + term_id
+        return term_url
+
+
     def get_term_urls(self):
         urls = []
         for term_info_tuple in self.get_term_info_by_db():
-            course_id = str(term_info_tuple[1])
             term_id = term_info_tuple[0]
-            self.cur.execute(
-                'Select url From course WHERE id = ' + course_id
-            )
-            course_url = self.cur.fetchall()[0][0]
-            course_url = course_url.replace('/course','/learn')
-            term_url = course_url + '?tid=' + term_id
+            term_url = self.get_term_url(term_id=term_id)
             urls.append(term_url)
         return urls
 
@@ -283,44 +296,44 @@ class LessonDataSpider(object):
     def get_post_data(
         self,   post,   term_url,   for_update = False,
     ):
-        data_dict = {}
-        data_dict['term_url'] = term_url
-        data_dict['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
-        data_dict['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
-        data_dict['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
+        data = {}
+        data['term_url'] = term_url
+        data['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
+        data['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
+        data['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
         cnt_area = post.find_element_by_class_name('cnt')
-        data_dict['teacher_joined'] = False
+        data['teacher_joined'] = False
         if cnt_area.find_elements_by_class_name('u-forumtag'):
-            data_dict['teacher_joined'] = True
-        data_dict['title'] = cnt_area.find_element_by_tag_name('a').text
-        data_dict['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+            data['teacher_joined'] = True
+        data['title'] = cnt_area.find_element_by_tag_name('a').text
+        data['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
         if post.find_element_by_class_name('anonyInfo').is_displayed():
             #如果匿名发表
-            data_dict['username'] = None
-            data_dict['uid'] = None
-            data_dict['is_teacher'] = None
+            data['username'] = None
+            data['uid'] = None
+            data['is_teacher'] = None
         else:
             author_area = post.find_element_by_class_name('userInfo')
-            data_dict['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
-            data_dict['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
-            data_dict['is_teacher'] = False
+            data['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
+            data['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
+            data['is_teacher'] = False
             if author_area.find_elements_by_class_name('lector'):
-                data_dict['is_teacher'] = True
+                data['is_teacher'] = True
         time_text = post.find_element_by_tag_name('span').text
         #print(time_text)
         submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
         submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
-        data_dict['submit_date'] = '-'.join(submit_time_list)
-        data_dict['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
+        data['submit_date'] = '-'.join(submit_time_list)
+        data['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
         try:
-            print(data_dict['submit_date'],data_dict['term_url'].split('=')[-1],data_dict['title'])
+            print(data['submit_date'],data['term_url'].split('=')[-1],data['title'])
         except:
             print('unicodeEncodeError')
         if not for_update:
-            self.save_post_info_to_db(data_dict)
+            self.save_post_info_to_db(data)
         else:
-            self.update_post_base_info(data_dict)
-        return data_dict
+            self.update_post_base_info(data)
+        return data
 
 
     def crawl_page_posts_data(
@@ -382,8 +395,18 @@ class LessonDataSpider(object):
             if current_page_num:
                 self.cur.execute("UPDATE term SET first_crawl_ok = 1 WHERE term_id = %s",term_id)
 
-    def update_post_content(self):
-        pass
+
+    def get_post_url(self,post_id):
+        return self.get_term_url(post_id=post_id)+'#/learn/forumdetail?pid='+post_id
+
+
+    def update_post_content(self,post_id):
+        browser = self.driver
+        post_url = self.get_post_url(post_id)
+        print(post_url)
+        browser.get(post_url)
+        browser.find_element_by_xpath('//*[@id="courseLearn-inner-box"]/div/div[2]/div/div[4]/div/div[1]')
+
 
 
     def update_post_base_info(self,data):
@@ -417,7 +440,6 @@ class LessonDataSpider(object):
                 )
                 self.conn.commit()
             except:
-                self.update_post_base_info(data)
                 print('this post has been saved previously')
         else:
             #实名发表
