@@ -400,13 +400,18 @@ class LessonDataSpider(object):
         return self.get_term_url(post_id=post_id)+'#/learn/forumdetail?pid='+post_id
 
 
-    def update_post_content(self,post_id):
-        browser = self.driver
-        post_url = self.get_post_url(post_id)
-        print(post_url)
-        browser.get(post_url)
-        browser.find_element_by_xpath('//*[@id="courseLearn-inner-box"]/div/div[2]/div/div[4]/div/div[1]')
-
+    def update_post_content(self,post_id,browser_set_ok=False):
+        if not browser_set_ok:
+            post_url = self.get_post_url(post_id)
+            self.driver.get(post_url)
+        cnt = WebDriverWait(self.driver, 10).until(
+            EC.presence_of_element_located((By.XPATH,'//*[@id="courseLearn-inner-box"]/div/div[2]/div/div[1]/div/div[2]'))
+        ).text
+        #print(content)
+        self.cur.execute(
+            'update post set content="{}" where post_id = {}'.format(cnt,post_id)
+        )
+        self.conn.commit()
 
 
     def update_post_base_info(self,data):
@@ -471,6 +476,18 @@ class LessonDataSpider(object):
 
     def get_post_info_by_db(self):
         pass
+
+
+    def get_reply_by_crawling(self,post_id):
+        browser = self.driver
+        post_url = self.get_post_url(post_id)
+        browser.get(post_url)
+        self.update_post_content(post_id,browser_set_ok=True)
+        reply_list = browser.find_element_by_xpath(
+            '//*[@id="courseLearn-inner-box"]/div/div[2]/div/div[4]/div/div[1]/div[1]'
+        ).find_elements_by_class_name('f-pr')
+        for reply in reply_list:
+            print(reply)
 
 
     def tear_down(self):
