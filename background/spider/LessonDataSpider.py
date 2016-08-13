@@ -16,6 +16,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time,pymysql,random,re
 from threading import Thread
+from postClass import Post
+from termClass import Term
+from replyClass import Reply
 
 class LessonDataSpider(object):
     def __init__(
@@ -219,20 +222,12 @@ class LessonDataSpider(object):
     def get_term_url(self,post_id=None,term_id=None,course_id=None):
         if term_id==None and post_id==None:
             raise Exception('I cannot locate the term without term_id or post_id.')
-        if term_id==None and post_id!=None:
-            self.cur.execute(
-                'SELECT term_id FROM term WHERE id = (SELECT term FROM post WHERE post_id = {})'.format(post_id)
-            )
-            term_id = self.cur.fetchall()[0][0]
-        sql = 'SELECT url From course WHERE id = '
-        if course_id:
-            sql += course_id
+        if term_id:
+            return Term(term_id).url
         else:
-            sql += '(SELECT course FROM term WHERE term_id = {})'.format(term_id)
-        self.cur.execute(sql)
-        course_url = self.cur.fetchall()[0][0].replace('/course','/learn')
-        term_url = course_url + '?tid=' + term_id
-        return term_url
+            return Term(
+                db_id = Post(post_id=post_id).db_term_id
+            ).url
 
 
     def get_term_urls(self):
@@ -247,12 +242,7 @@ class LessonDataSpider(object):
     def get_term_post_pages_num(self,term_url,from_db=False):
         term_id = term_url.split('=')[-1]
         if from_db:
-            self.cur.execute(
-                'select page_num from term where term_id = %s',(term_id)
-            )
-            page_num = int(self.cur.fetchall()[0][0])
-            print(page_num)
-            return page_num
+            return Term(term_id=term_id).db_page_num
         browser = self.driver
         first_page_url = term_url + '#/learn/forumindex'
         while(1):
@@ -286,56 +276,6 @@ class LessonDataSpider(object):
         return int(num)
 
 
-    def term_is_initialized(self,term_id):
-        self.cur.execute(
-            'SELECT first_crawl_ok FROM term WHERE term_id = %s',term_id
-        )
-        return self.cur.fetchall()[0][0]
-
-
-    def get_post_data(
-        self,   post,   term_url,   for_update = False,
-    ):
-        data = {}
-        data['term_url'] = term_url
-        data['view_cot'] = int(post.find_element_by_class_name('watch').text.split('：')[-1])
-        data['reply_cot'] = int(post.find_element_by_class_name('reply').text.split('：')[-1])
-        data['vote_cot'] = int(post.find_element_by_class_name('vote').text.split('：')[-1])
-        cnt_area = post.find_element_by_class_name('cnt')
-        data['teacher_joined'] = False
-        if cnt_area.find_elements_by_class_name('u-forumtag'):
-            data['teacher_joined'] = True
-        data['title'] = cnt_area.find_element_by_tag_name('a').text
-        data['post_id'] = cnt_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
-        if post.find_element_by_class_name('anonyInfo').is_displayed():
-            #如果匿名发表
-            data['username'] = None
-            data['uid'] = None
-            data['is_teacher'] = None
-        else:
-            author_area = post.find_element_by_class_name('userInfo')
-            data['username'] = author_area.find_element_by_tag_name('a').get_attribute('title')
-            data['uid'] = author_area.find_element_by_tag_name('a').get_attribute('href').split('=')[-1]
-            data['is_teacher'] = False
-            if author_area.find_elements_by_class_name('lector'):
-                data['is_teacher'] = True
-        time_text = post.find_element_by_tag_name('span').text
-        #print(time_text)
-        submit_time_string = time_text.split('|')[0].split('于')[-1][:-2]
-        submit_time_list = re.split('[年月日]',submit_time_string)[:-1]
-        data['submit_date'] = '-'.join(submit_time_list)
-        data['latest_reply_date'] = time_text.split('|')[-1].split('（')[-1].split('）')[0]
-        try:
-            print(data['submit_date'],data['term_url'].split('=')[-1],data['title'])
-        except:
-            print('unicodeEncodeError')
-        if not for_update:
-            self.save_post_info_to_db(data)
-        else:
-            self.update_post_base_info(data)
-        return data
-
-
     def crawl_page_posts_data(
         self,   term_url,   page_index,   for_update=False,   crawl_delta=True
     ):
@@ -356,8 +296,11 @@ class LessonDataSpider(object):
             ).find_elements_by_tag_name('li')
             print('waiting for loading,search again...')
             time.sleep(1)
-        for post in post_list:
-            self.get_post_data(post,term_url,for_update)
+        for postEle in post_list:
+            if for_update:
+                Post(postEle).update_info()
+            else:
+                Post(postEle).save_to_db()
 
 
     def get_post_info_by_crawling(self,term_url,for_update=False):
@@ -367,7 +310,7 @@ class LessonDataSpider(object):
         print((current_page_num,saved_page_num))
         if current_page_num==0:
             return
-        if self.term_is_initialized(term_id) :
+        if Term(term_id=term_id).is_initialized:
             print('current_page_num:{},saved_page_num:{}'.format(current_page_num,saved_page_num))
             if current_page_num > saved_page_num or current_page_num < saved_page_num:
                 self.cur.execute(
@@ -396,10 +339,6 @@ class LessonDataSpider(object):
                 self.cur.execute("UPDATE term SET first_crawl_ok = 1 WHERE term_id = %s",term_id)
 
 
-    def get_post_url(self,post_id):
-        return self.get_term_url(post_id=post_id)+'#/learn/forumdetail?pid='+post_id
-
-
     def update_post_content(self,post_id,browser_set_ok=False):
         if not browser_set_ok:
             post_url = self.get_post_url(post_id)
@@ -414,80 +353,19 @@ class LessonDataSpider(object):
         self.conn.commit()
 
 
-    def update_post_base_info(self,data):
-        #参数自己填
-        self.cur.execute(
-            'SELECT id FROM post WHERE post_id = %s',data['post_id']
-        )
-        if self.cur.fetchall():
-            self.cur.execute(
-                'update post set submit_date = %s,latest_reply_date = %s,view_cot = %s where post_id = %s',
-                (data['submit_date'],data['latest_reply_date'],data['view_cot'],data['post_id'])
-            )
-            self.conn.commit()
-        else:
-            print('update_post_date() Error: This post had not been saved,you should execute save operation first.')
-            #self.save_post_info_to_db(data)
-
-
-    def save_post_info_to_db(self,data):
-        self.cur.execute(
-            'select id from term where term_id=' + data['term_url'].split('=')[-1]
-        )
-        term_id = self.cur.fetchall()[0][0]
-        if data['username']==None and data['uid']==None:
-            #如果匿名发表，直接存post
-            try:
-                self.cur.execute(
-                    'insert into post(post_id,term,reply_cot,votinse_cot,view_cot,submit_date,latest_reply_date,title,teacher_joined)'
-                    'values(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                    (data['post_id'],term_id,data['reply_cot'],data['vote_cot'],data['view_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
-                )
-                self.conn.commit()
-            except:
-                print('this post has been saved previously')
-        else:
-            #实名发表
-            try:
-                #先存用户
-                self.cur.execute(
-                    'insert into user(uid,username,is_teacher)'
-                    'values(%s,%s,%s)',
-                    (data['uid'],data['username'],data['is_teacher'])
-                )
-                self.conn.commit()
-            except:
-                print('this user has been saved previously')
-            #读取用户id
-            self.cur.execute(
-                'select id from user where uid = ' + data['uid']
-            )
-            saved_user_id = self.cur.fetchall()[0][0]
-            try:
-                self.cur.execute(
-                    'insert into post(post_id,user,term,reply_cot,vote_cot,view_cot,submit_date,latest_reply_date,title,teacher_joined)'
-                    'values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                    (data['post_id'],saved_user_id,term_id,data['reply_cot'],data['vote_cot'],data['view_cot'],data['submit_date'],data['latest_reply_date'],data['title'],data['teacher_joined'])
-                )
-                self.conn.commit()
-            except:
-                print('this post has been saved previously')
-
-
     def get_post_info_by_db(self):
         pass
 
 
     def get_reply_by_crawling(self,post_id):
         browser = self.driver
-        post_url = self.get_post_url(post_id)
-        browser.get(post_url)
-        self.update_post_content(post_id,browser_set_ok=True)
+        browser.get(Post(post_id=post_id).url)
+        self.update_post_content(post_id=post_id,browser_set_ok=True)
         reply_list = browser.find_element_by_xpath(
             '//*[@id="courseLearn-inner-box"]/div/div[2]/div/div[4]/div/div[1]/div[1]'
         ).find_elements_by_class_name('f-pr')
-        for reply in reply_list:
-            print(reply)
+        for replyEle in reply_list:
+            Reply(replyEle).save_to_db()
 
 
     def tear_down(self):
