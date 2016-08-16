@@ -22,8 +22,8 @@ from replyClass import Reply
 
 class LessonDataSpider(object):
     def __init__(
-            self,is_visual=True,    need_web=True,
-            need_db=True,           qq_login=False
+            self,   is_visual=True,    need_web=True,
+            need_db=True,       qq_login=False
     ):
         if qq_login:
             need_web = True
@@ -219,23 +219,12 @@ class LessonDataSpider(object):
         return self.cur.fetchall()
 
 
-    def get_term_url(self,post_id=None,term_id=None,course_id=None):
-        if term_id==None and post_id==None:
-            raise Exception('I cannot locate the term without term_id or post_id.')
-        if term_id:
-            return Term(term_id).url
-        else:
-            return Term(
-                db_id = Post(post_id=post_id).db_term_id
-            ).url
-
-
     def get_term_urls(self):
         urls = []
         for term_info_tuple in self.get_term_info_by_db():
-            term_id = term_info_tuple[0]
-            term_url = self.get_term_url(term_id=term_id)
-            urls.append(term_url)
+            urls.append(
+                Term(term_id=term_info_tuple[0]).url
+            )
         return urls
 
 
@@ -354,12 +343,17 @@ class LessonDataSpider(object):
 
 
     def get_post_info_by_db(self):
-        pass
+        self.cur.execute(
+            'SELECT post_id FROM post'
+        )
+        return map(lambda x:x[0],self.cur.fetchall())
 
 
     def get_reply_by_crawling(self,post_id):
         browser = self.driver
-        browser.get(Post(post_id=post_id).url)
+        url = Post(post_id=post_id,conn=self.conn).url
+        print('Enter Post Page:',url)
+        browser.get(url)
         self.update_post_content(post_id=post_id,browser_set_ok=True)
         reply_list = browser.find_element_by_xpath(
             '//*[@id="courseLearn-inner-box"]/div/div[2]/div/div[4]/div/div[1]/div[1]'
