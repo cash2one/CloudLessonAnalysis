@@ -20,13 +20,13 @@ class Course:
     @property
     def db_url(self):
         self.cur.execute(
-            'select url from course where id = ' + self.db_id
+            'select url from course where id = %s',self.db_id
         )
         return self.cur.fetchall()[0][0]
 
     @property
     def db_course_id(self):
         self.cur.execute(
-            'select course_id from course where id = ' + self.db_id
+            'select course_id from course where id = %s',self.db_id
         )
         return self.cur.fetchall()[0][0]

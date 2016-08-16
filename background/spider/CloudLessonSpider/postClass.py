@@ -124,3 +124,4 @@ class Post:
         else:
             print('Post:update_info():ERROR: This post had not been saved,you should execute save operation first.')
             #self.save_to_db()
+

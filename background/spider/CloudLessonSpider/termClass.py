@@ -40,7 +40,7 @@ class Term:
     @property
     def url(self):
         return Course(
-            course_id = self.db_course_id,
+            db_id = self.db_course_id,
             conn = self.conn
         ).db_url.replace('/course','/learn')+'?tid='+self.term_id
 
