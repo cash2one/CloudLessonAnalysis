@@ -7,7 +7,7 @@
 ```
 Course->Term->Post->Reply, extend User
 ```
-![](https://api.sinas3.com/v1/SAE_visualspider/visualspider/QQ%E6%88%AA%E5%9B%BE20160817053118.png)
+![](https://api.sinas3.com/v1/SAE_visualspider/visualspider/123.png)
 - 爬虫层面，围绕这几个对象做爬取
 ```
 参见lessondatespider.py
