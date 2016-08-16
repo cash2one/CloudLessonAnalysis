@@ -9,8 +9,11 @@ Course->Term->Post->Reply, extend User
 - 爬虫层面，围绕以上几个对象做抓取：
 ```
 0.先针对[计算机专业]的course挖掘
+
 1.使用selenium chrome的webdriver动态抓取
+
 2.网易的页面比较花哨，js加载很多，元素id是动态生成的，还内嵌了不少iframe，不使用前端爬虫比较难抓数据。
+
 4.类和方法参见lessondatespider.py
 ```
 ###SegmentFault
