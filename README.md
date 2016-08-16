@@ -8,9 +8,12 @@
 Course->Term->Post->Reply, extend User
 ```
 ![](https://api.sinas3.com/v1/SAE_findmentor/findmentor/product_img/213132.png)
-- 爬虫层面，围绕这几个对象做爬取
+- 爬虫层面，围绕以上几个对象做抓取：
 ```
-参见lessondatespider.py
+使用selenium chrome的webdriver动态抓取，
+网易的页面比较花哨，js加载很多，元素id是动态生成的。
+内嵌了不少iframe，不使用前端爬虫比较难抓数据。
+类和方法参见lessondatespider.py
 ```
 ###SegmentFault
 ##云课堂数据分析
