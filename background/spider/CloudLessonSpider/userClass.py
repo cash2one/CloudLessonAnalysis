@@ -11,8 +11,9 @@
 """
 
 class User:
-    def __init__(self,author_area,conn=None):
+    def __init__(self,author_area=None,info_dict=None,conn=None):
         self.author_area = author_area
+        self.info_dict = info_dict
         if conn:
             self.conn = conn
             self.cur = self.conn.cursor()
@@ -31,12 +32,29 @@ class User:
 
     @property
     def db_id(self):
+        if self.info_dict:
+            uid = self.info_dict['uid']
+        else:
+            uid = self.uid
+        print('uid = ',uid)
         self.cur.execute(
-                'select id from user where uid = ' + self.uid
+                'select id from user where uid = ' + uid
             )
-        return self.cur.fetchall()[0][0]
+        data = self.cur.fetchall()
+        if data:
+            return data[0][0]
+        else:
+            return False
 
     def save_to_db(self):
+        if self.info_dict:
+            uid = self.info_dict['uid']
+            username = self.info_dict['username']
+            is_teacher = self.info_dict['is_teacher']
+        else:
+            uid = self.uid
+            username = self.username
+            is_teacher = self.is_teacher
         if self.db_id:
             print('this user has been saved previously')
             return False
@@ -44,7 +62,7 @@ class User:
             self.cur.execute(
                 'insert into user(uid,username,is_teacher)'
                 'values(%s,%s,%s)',
-                (self.uid,self.username,self.is_teacher)
+                (uid,username,is_teacher)
             )
             self.conn.commit()
             return True

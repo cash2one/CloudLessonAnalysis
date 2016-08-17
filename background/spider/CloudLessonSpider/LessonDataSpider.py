@@ -351,15 +351,16 @@ class LessonDataSpider(object):
 
     def get_reply_by_crawling(self,post_id):
         browser = self.driver
-        url = Post(post_id=post_id,conn=self.conn).url
-        print('Enter Post Page:',url)
-        browser.get(url)
+        post = Post(post_id=post_id,conn=self.conn)
+        post.save_to_db()
+        print('Enter Post Page:',post.url)
+        browser.get(post.url)
         self.update_post_content(post_id=post_id,browser_set_ok=True)
         reply_list = browser.find_element_by_xpath(
             '//*[@id="courseLearn-inner-box"]/div/div[2]/div/div[4]/div/div[1]/div[1]'
-        ).find_elements_by_class_name('f-pr')
+        ).find_elements_by_class_name('m-detailInfoItem')
         for replyEle in reply_list:
-            Reply(replyEle).save_to_db()
+            Reply(replyEle,self.conn).save_to_db(post_db_id=post.db_id)
 
 
     def tear_down(self):
